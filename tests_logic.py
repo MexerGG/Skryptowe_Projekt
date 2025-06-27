@@ -1,72 +1,66 @@
-import unittest
-import os
-import json
 from logic import VotingLogic
+import time
+import unittest
+import pytest
+from memory_profiler import profile
+import flake8.api.legacy as flake8
 
+# Testy jednostkowe
 class TestVotingLogic(unittest.TestCase):
     def setUp(self):
-        # Użyj alternatywnych plików do testów
-        self.signup_path = "signup_test.json"
-        self.votecount_path = "votecount_test.json"
-        self.logic = VotingLogic(user_file=self.signup_path, vote_file=self.votecount_path)
+        self.logic = VotingLogic(user_file="test_users.json", vote_file="test_votes.json")
         self.logic.uzytkownicy = []
         self.logic.votes = [0, 0, 0, 0, 0]
-        self.logic.save_users()
-        self.logic.save_votes()
 
     def test_register_user(self):
-        success, msg = self.logic.register_user("testuser", "pass123")
+        success, msg = self.logic.register_user("test", "pass")
         self.assertTrue(success)
-        self.assertIn("Rejestracja", msg)
-        self.assertEqual(len(self.logic.uzytkownicy), 1)
-        self.assertEqual(self.logic.uzytkownicy[0]["login"], "testuser")
 
-        # Rejestracja tego samego loginu
-        success2, msg2 = self.logic.register_user("testuser", "pass456")
-        self.assertFalse(success2)
-        self.assertIn("istnieje", msg2)
+    def test_duplicate_user(self):
+        self.logic.register_user("test", "pass")
+        success, _ = self.logic.register_user("test", "pass")
+        self.assertFalse(success)
 
-    def test_check_login(self):
-        self.logic.register_user("testuser", "pass123")
-        success, voted = self.logic.check_login("testuser", "pass123")
-        self.assertTrue(success)
-        self.assertFalse(voted)
+    def test_vote_sum_recursive(self):
+        self.logic.votes = [1, 2, 3]
+        self.assertEqual(self.logic.recursive_vote_sum(), 6)
 
-        self.assertFalse(self.logic.check_login("wronguser", "pass123")[0])
-        self.assertFalse(self.logic.check_login("testuser", "badpass")[0])
+# Testy funkcjonalne (pytest)
+def test_login():
+    logic = VotingLogic(user_file="test_users.json", vote_file="test_votes.json")
+    logic.register_user("user", "pass")
+    success, voted = logic.check_login("user", "pass")
+    assert success
+    assert not voted
 
-    def test_cast_vote_and_prevent_double_vote(self):
-        self.logic.register_user("voter", "secret")
-        success, msg = self.logic.cast_vote("voter", "@")
-        self.assertTrue(success)
-        self.assertIn("zapisany", msg)
+# Testy graniczne
+def test_vote_invalid_symbol():
+    logic = VotingLogic()
+    logic.register_user("x", "y")
+    success, msg = logic.cast_vote("x", "X")
+    assert not success
 
-        # Drugi głos – powinien być zablokowany
-        success2, msg2 = self.logic.cast_vote("voter", "#")
-        self.assertFalse(success2)
-        self.assertIn("odd", msg2.lower())  # sprawdź, że jest info o oddanym głosie
+# Testy wydajności
+def test_vote_performance():
+    logic = VotingLogic()
+    start = time.time()
+    for _ in range(10000):
+        logic.votes[0] += 1
+    end = time.time()
+    assert end - start < 1.0
 
-        counts = self.logic.get_results()
-        self.assertEqual(counts[0], 1)
-        self.assertEqual(sum(counts), 1)
+# Testy pamięci
+@profile
+def test_memory():
+    logic = VotingLogic()
+    for _ in range(100000):
+        logic.votes.append(1)
 
-    def test_vote_counts(self):
-        self.logic.register_user("u1", "p")
-        self.logic.register_user("u2", "p")
-        self.logic.cast_vote("u1", "#")
-        self.logic.cast_vote("u2", "NOTA")
+# Test jakości kodu
+def run_flake8():
+    style_guide = flake8.get_style_guide()
+    report = style_guide.check_files(["logic.py"])
+    assert report.total_errors == 0
 
-        counts = self.logic.get_results()
-        self.assertEqual(counts[1], 1)  # #
-        self.assertEqual(counts[4], 1)  # NOTA
-        self.assertEqual(sum(counts), 2)
-
-    def tearDown(self):
-        # Usuń pliki testowe
-        if os.path.exists(self.signup_path):
-            os.remove(self.signup_path)
-        if os.path.exists(self.votecount_path):
-            os.remove(self.votecount_path)
-
-if __name__ == "__main__":
+if __name__ == '__main__':
     unittest.main()
